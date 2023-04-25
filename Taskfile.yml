@@ -1,0 +1,40 @@
+version: '3'
+
+tasks:
+  default:
+    deps: [install]
+
+  tidy:
+    cmds:
+      - go mod tidy
+
+  generate:
+    deps: [tidy]
+    cmds:
+      - go generate ./...
+
+  build:
+    deps: [tidy]
+    cmds:
+      - go build
+
+  install:
+    deps: [build]
+    cmds:
+      - go install .
+
+  # Should just complain that it shouldn't be run!
+  run-main:
+    deps: [build]
+    cmds:
+      - go run main.go
+
+  test:
+    deps: [build]
+    cmds:
+      - go test -count=1 -parallel=4 ./...
+
+  testacc:
+    deps: [build]
+    cmds:
+      - TF_ACC=1 TEMPORAL_CLI_ADDRESS=localhost:7233 go test -count=1 -parallel=4 -timeout 10m -v ./...
