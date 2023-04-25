@@ -6,17 +6,50 @@ A [Terraform](https://terraform.io) Provider for [Temporal](https://temporal.io/
 
 This project is not affiliated with nor supported by Temporal Technologies, Inc.
 
+**It is a Work-In-Progress that currently only round-trips Schedules**
 
-###
+----
+
+### Example
+
+Examples are in the [`examples`](./examples) directory.
+
+```
+terraform {
+  required_providers {
+    temporal = {
+      source = "neomantra/temporal"
+    }
+  }
+}
+
+provider "temporal" {
+  hostport  = "127.0.0.1:7233"
+  namespace = "default"
+}
+
+// Schedule round-trip
+resource "temporal_schedule" "test" {
+  id = "test-schedule"
+}
+
+data "temporal_schedule" "test" {
+  id = temporal_schedule.test.id
+}
+
+output "test-desc" {
+  value = data.temporal_schedule.test.desc
+}
+```
+
+----
+
+### Development
 
 ```
 # spin up a dev temporal server for testing
 temporal server start-dev
-
-
 ```
-
-### Development
 
 Reminder put this in `~/.terraformrc`:
 
@@ -33,10 +66,12 @@ provider_installation {
 }
 ```
 
+----
+
 ### License
 
 Authored by [Evan Wies](https://github.com/neomantra).
 
-Copyright (c) 2023 Neomantra BV.
+Copyright (c) 2023 Neomantra BV.  All rights reserved.
 
-Released under the MIT License, see `LICENSE`.
+Released under the MIT License, see [`LICENSE`](./LICENSE).

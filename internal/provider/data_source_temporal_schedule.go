@@ -81,16 +81,16 @@ func (d *ScheduleDataSource) Read(ctx context.Context, req datasource.ReadReques
 	// Fetch the Schedule's description from the Server
 	desc, err := d.tclient.ScheduleClient().GetHandle(ctx, state.ScheduleId.ValueString()).Describe(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Unable to read ScheduleWorkflow %s : %s", state.ScheduleId.ValueString(), err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Read: Unable to describe Schedule %s : %s", state.ScheduleId.ValueString(), err))
 		return
 	}
 	jsonBytes, err := json.Marshal(desc)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Unable to marshal ScheduledWorkflow description after read: %s", err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Read: Unable to marshal Schedule description after Describe: %s", err))
 		return
 	}
 	state.DescJson = basetypes.NewStringValue(string(jsonBytes))
-	tflog.Trace(ctx, fmt.Sprintf("read ScheduledWorkflow data source %s", state.ScheduleId.ValueString()))
+	tflog.Trace(ctx, fmt.Sprintf("Read Schedule data source %s", state.ScheduleId.ValueString()))
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)

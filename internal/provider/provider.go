@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -10,8 +11,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	temporalClient "go.temporal.io/sdk/client"
+
+	"github.com/neomantra/terraform-provider-temporal/internal/zapadapter"
 )
 
 // Ensure TemporalProvider satisfies various provider interfaces.
@@ -83,6 +88,8 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	tclient, _ := temporalClient.NewLazyClient(temporalClient.Options{
 		HostPort:  hostPort,
 		Namespace: namespace,
+		Logger:    zapadapter.NewZapAdapter(buildProviderZapLogger()),
+		Identity:  getProviderTemporalIdentity(),
 	})
 
 	resp.DataSourceData = tclient
@@ -107,4 +114,50 @@ func New(version string) func() provider.Provider {
 			version: version,
 		}
 	}
+}
+
+////////////////////////////////////////////////////////////////////////
+
+func getProviderTemporalIdentity() string {
+	hostName, err := os.Hostname()
+	if err != nil {
+		hostName = "unknown"
+	}
+	return fmt.Sprintf("terraform@%s", hostName)
+}
+
+func buildProviderZapLogger() *zap.Logger {
+	encodeConfig := zapcore.EncoderConfig{
+		TimeKey:        "ts",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      zapcore.OmitKey, // we use our own caller
+		FunctionKey:    zapcore.OmitKey,
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.CapitalColorLevelEncoder,
+		EncodeTime:     zapcore.ISO8601TimeEncoder,
+		EncodeDuration: zapcore.SecondsDurationEncoder,
+		EncodeCaller:   nil,
+	}
+
+	logLevel := zap.InfoLevel
+	if os.Getenv("TF_DEBUG") != "" {
+		logLevel = zap.DebugLevel
+	}
+
+	config := zap.Config{
+		Level:             zap.NewAtomicLevelAt(logLevel),
+		Development:       false,
+		DisableStacktrace: os.Getenv("TEMPORAL_CLI_SHOW_STACKS") == "",
+		Sampling:          nil,
+		Encoding:          "console",
+		EncoderConfig:     encodeConfig,
+		OutputPaths:       []string{"stderr"},
+		ErrorOutputPaths:  []string{"stderr"},
+		DisableCaller:     true,
+	}
+	logger, _ := config.Build()
+	return logger
 }

@@ -34,7 +34,7 @@ tasks:
     cmds:
       - go test -count=1 -parallel=4 ./...
 
-  testacc:
-    deps: [build]
+  test-acc:
+    deps: [test]
     cmds:
       - TF_ACC=1 TEMPORAL_CLI_ADDRESS=localhost:7233 go test -count=1 -parallel=4 -timeout 10m -v ./...

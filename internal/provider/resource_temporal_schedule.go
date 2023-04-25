@@ -105,7 +105,7 @@ func (r *ScheduleResource) Create(ctx context.Context, req resource.CreateReques
 		Overlap: temporalEnums.SCHEDULE_OVERLAP_POLICY_SKIP,
 	})
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Unable to create ScheduleWorkflow: %s", err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Create: Unable to create Schedule: %s", err))
 		return
 	}
 
@@ -113,16 +113,16 @@ func (r *ScheduleResource) Create(ctx context.Context, req resource.CreateReques
 
 	desc, err := scheduleHandle.Describe(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Unable to describe ScheduleWorkflow after create: %s", err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Create: Unable to describe Schedule after create: %s", err))
 		return
 	}
 	jsonBytes, err := json.Marshal(desc)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Unable to marshal ScheduledWorkflow description after create: %s", err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Create: Unable to marshal Schedule description after create: %s", err))
 		return
 	}
 	data.DescJson = basetypes.NewStringValue(string(jsonBytes))
-	tflog.Trace(ctx, fmt.Sprintf("created ScheduledWorkflow resource %s", data.ScheduleId.ValueString()))
+	tflog.Trace(ctx, fmt.Sprintf("Created Schedule resource %s", data.ScheduleId.ValueString()))
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -139,16 +139,16 @@ func (r *ScheduleResource) Read(ctx context.Context, req resource.ReadRequest, r
 	// Fetch the Schedule's description from the Server
 	desc, err := r.tclient.ScheduleClient().GetHandle(ctx, data.ScheduleId.ValueString()).Describe(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Unable to read ScheduleWorkflow : %s", err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Read: Unable to describe Schedule %s : %s", data.ScheduleId.ValueString(), err))
 		return
 	}
 	jsonBytes, err := json.Marshal(desc)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Unable to marshal ScheduledWorkflow description after read: %s", err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Read: Unable to marshal ScheduledWorkflow description after Describe: %s", err))
 		return
 	}
 	data.DescJson = basetypes.NewStringValue(string(jsonBytes))
-	tflog.Trace(ctx, fmt.Sprintf("read ScheduledWorkflow resource %s", data.ScheduleId.ValueString()))
+	tflog.Trace(ctx, fmt.Sprintf("Read ScheduledWorkflow resource %s", data.ScheduleId.ValueString()))
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -177,8 +177,9 @@ func (r *ScheduleResource) Delete(ctx context.Context, req resource.DeleteReques
 	// Fetch the Schedule from the Server
 	err := r.tclient.ScheduleClient().GetHandle(ctx, data.ScheduleId.ValueString()).Delete(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Unable to delete ScheduleWorkflow : %s", err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Delete: Unable to delete Schedule : %s", err))
 	}
+	tflog.Trace(ctx, fmt.Sprintf("Deleted ScheduledWorkflow resource %s", data.ScheduleId.ValueString()))
 }
 
 func (r *ScheduleResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
