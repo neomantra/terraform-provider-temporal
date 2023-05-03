@@ -6,7 +6,19 @@ A [Terraform](https://terraform.io) Provider for [Temporal](https://temporal.io/
 
 This project is not affiliated with nor supported by Temporal Technologies, Inc.
 
+----
+
+### Current Status
+
 **It is a Work-In-Progress that currently only round-trips Schedules**
+
+Supported Temporal Features:
+
+ * [ ] Schedule
+ * [ ] Workflow
+ * [ ] Args
+ * [ ] Memo
+ * [ ] SearchAttributes
 
 ----
 

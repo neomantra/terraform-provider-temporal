@@ -38,3 +38,28 @@ tasks:
     deps: [test]
     cmds:
       - TF_ACC=1 TEMPORAL_CLI_ADDRESS=localhost:7233 go test -count=1 -parallel=4 -timeout 10m -v ./...
+
+  # Example terraform tasks to help dev
+  tf-example-plan:
+    deps: [build]
+    cmds:
+      - terraform -chdir=examples/hello plan
+
+  tf-example-apply:
+    deps: [build]
+    cmds:
+      - terraform -chdir=examples/hello apply
+
+  tf-example-destroy:
+    deps: [build]
+    cmds:
+      - terraform -chdir=examples/hello destroy
+
+  tf-example-clean:
+    cmds:
+      - rm -f examples/hello/terraform.tfstate
+
+  tf-example-schema:
+    deps: [build]
+    cmds:
+      - terraform -chdir=examples/hello providers schema -json 
