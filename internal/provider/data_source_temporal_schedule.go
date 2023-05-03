@@ -8,7 +8,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	temporalClient "go.temporal.io/sdk/client"
@@ -89,7 +88,7 @@ func (d *ScheduleDataSource) Read(ctx context.Context, req datasource.ReadReques
 		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Read: Unable to marshal Schedule description after Describe: %s", err))
 		return
 	}
-	state.DescJson = basetypes.NewStringValue(string(jsonBytes))
+	state.DescJson = types.StringValue(string(jsonBytes))
 	tflog.Trace(ctx, fmt.Sprintf("Read Schedule data source %s", state.ScheduleId.ValueString()))
 
 	// Save data into Terraform state

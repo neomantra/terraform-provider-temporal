@@ -17,6 +17,12 @@ provider "temporal" {
 // Schedule round-trip
 resource "temporal_schedule" "test" {
   id = "test-schedule"
+  action {
+    start_workflow {
+      workflow = "my-workflow"
+      task_queue = "my-task-queue"
+    }
+  }
 }
 
 data "temporal_schedule" "test" {
