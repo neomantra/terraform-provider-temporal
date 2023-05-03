@@ -8,16 +8,11 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+
+	"github.com/neomantra/terraform-provider-temporal/internal/tfschema"
+
 	temporalEnums "go.temporal.io/api/enums/v1"
 	temporalClient "go.temporal.io/sdk/client"
 )
@@ -37,8 +32,8 @@ type ScheduleResource struct {
 
 // ScheduleResourceModel describes the resource data model.
 type ScheduleResourceModel struct {
-	ScheduleId types.String `tfsdk:"id"`
-	// TODOSpec               types.Object `tfsdk:"spec"`
+	ScheduleId         types.String         `tfsdk:"id"`
+	ScheduleSpec       *ScheduleSpecModel   `tfsdk:"schedule"`
 	Action             *ScheduleActionModel `tfsdk:"action"`
 	Overlap            types.String         `tfsdk:"overlap"`
 	CatchupWindow      types.String         `tfsdk:"catchup_window"`
@@ -50,6 +45,55 @@ type ScheduleResourceModel struct {
 	//ScheduleBackfill []ScheduleBackfill `tfsdk:"schedule_backfill"`
 	//Memo             types.String `tfsdk:"memo_json"`
 	//SearchAttributes types.String `tfsdk:"search_attributes_json"`
+}
+
+type ScheduleSpecModel struct {
+	// input.Description.Schedule.Spec = &temporalClient.ScheduleSpec{
+	// Calendars       []ScheduleCalendarSpecModel `tfsdk:"calendars"`
+	// Intervals       []ScheduleIntervalSpecModel `tfsdk:"intervals"`
+	CronExpressions types.List `tfsdk:"cron"`
+	// Skip            []ScheduleCalendarSpecModel `tfsdk:"skip"`
+	// StartAt         types.String                `tfsdk:"start_at"` // time.Time
+	// EndAt           types.String                `tfsdk:"end_at"`   // time.Time
+	// Jitter          types.Int64                 `tfsdk:"jitter"`
+	// TimeZoneName    types.String                `tfsdk:"time_zone"`
+}
+
+type ScheduleRangeModel struct {
+	// Start of the range (inclusive)
+	Start types.Int64 `tfsdk:"start"`
+	// End of the range (inclusive)
+	// Optional: defaulted to Start
+	End types.Int64 `tfsdk:"end"`
+	// Step to be take between each value
+	// Optional: defaulted to 1
+	Step types.Int64 `tfsdk:"step"`
+}
+
+type ScheduleCalendarSpecModel struct {
+	// Second range to match (0-59). default: matches 0
+	Second []ScheduleRangeModel `tfsdk:"second"`
+	// Minute range to match (0-59). default: matches 0
+	Minute []ScheduleRangeModel `tfsdk:"minute"`
+	// Hour range to match (0-23). default: matches 0
+	Hour []ScheduleRangeModel `tfsdk:"hour"`
+	// DayOfMonth range to match (1-31).  default: matches all days
+	DayOfMonth []ScheduleRangeModel `tfsdk:"day_of_month"`
+	// Month range to match (1-12).  default: matches all months
+	Month []ScheduleRangeModel `tfsdk:"month"`
+	// Year range to match. default: empty that matches all years
+	Year []ScheduleRangeModel `tfsdk:"year"`
+	// DayOfWeek range to match (0-6; 0 is Sunday). default: matches all days of the week
+	DayOfWeek []ScheduleRangeModel `tfsdk:"day_of_week"`
+	// Comment - Description of the intention of this schedule.
+	Comment types.String `tfsdk:"comment"`
+}
+
+type ScheduleIntervalSpecModel struct {
+	// Every - DURATION describes the period to repeat the interval.
+	Every types.String `tfsdk:"every"`
+	// Offset - DURATION is a fixed offset added to the intervals period. // Optional: Defaulted to 0
+	Offset types.String `tfsdk:"offset"`
 }
 
 type ScheduleActionModel struct {
@@ -80,205 +124,8 @@ func (r *ScheduleResource) Metadata(ctx context.Context, req resource.MetadataRe
 }
 
 func (r *ScheduleResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = schema.Schema{
-		MarkdownDescription: "Schedule resource",
-		Blocks: map[string]schema.Block{
-			//"schedule": makeScheduleAttributeSchema(),
-			"action": schema.SingleNestedBlock{
-				MarkdownDescription: scheduleActionDocs,
-				Blocks: map[string]schema.Block{
-					"start_workflow": schema.SingleNestedBlock{
-						//Required:   false,
-						Attributes: makeStartWorkflowAttributes(),
-					},
-				},
-			},
-		},
-		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
-				Required:            true,
-				MarkdownDescription: scheduleIDDocs,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"overlap": schema.StringAttribute{
-				Optional:            true,
-				Computed:            true,
-				Default:             stringdefault.StaticString(temporalEnums.SCHEDULE_OVERLAP_POLICY_SKIP.String()),
-				MarkdownDescription: scheduleOverlapDocs,
-				PlanModifiers: []planmodifier.String{
-					//TODO
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"catchup_window": schema.StringAttribute{
-				Optional:            true,
-				Computed:            true,
-				Default:             stringdefault.StaticString("1m0s"),
-				MarkdownDescription: scheduleCatchupWindowDocs,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"pause_on_failure": schema.BoolAttribute{
-				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(false),
-				MarkdownDescription: schedulePauseOnFailureDocs,
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"note": schema.StringAttribute{
-				Optional:            true,
-				MarkdownDescription: scheduleNoteDocs,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"paused": schema.BoolAttribute{
-				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(false),
-				MarkdownDescription: schedulePausedDocs,
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"remaining_actions": schema.Int64Attribute{
-				Computed:            true,
-				Optional:            true,
-				Default:             int64default.StaticInt64(0),
-				MarkdownDescription: scheduleRemainingActionsDocs,
-				PlanModifiers: []planmodifier.Int64{
-					int64planmodifier.UseStateForUnknown(),
-				},
-			},
-			"trigger_immediately": schema.BoolAttribute{
-				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(false),
-				MarkdownDescription: scheduleTriggerImmediatelyDocs,
-				// PlanModifiers: []planmodifier.Bool{
-				// boolplanmodifier.UseStateForUnknown(),
-				// },
-			},
-			// TODO
-			// "schedule_backfill": schema.BoolAttribute{
-			// 	Optional:            true,
-			// 	MarkdownDescription: scheduleScheduleBackfillDocs,
-			// 	// PlanModifiers: []planmodifier.String{
-			// 	// 	stringplanmodifier.UseStateForUnknown(),
-			// 	// },
-			// },
-			// "memo_json": schema.StringAttribute{
-			// 	Optional:            true,
-			// 	MarkdownDescription: scheduleMemoDocs,
-			// 	// PlanModifiers: []planmodifier.String{
-			// 	// 	stringplanmodifier.UseStateForUnknown(),
-			// 	// },
-			// },
-			// "search_attributes_json": schema.StringAttribute{
-			// 	Optional:            true,
-			// 	MarkdownDescription: scheduleSearchAttributesDocs,
-			// 	// PlanModifiers: []planmodifier.String{
-			// 	// 	stringplanmodifier.UseStateForUnknown(),
-			// 	// },
-			// },
-
-			// // Action - Which Action to take.
-			// Action ScheduleAction
-
-			// Overlap - Controls what happens when an Action would be started by a Schedule at the same time that an older Action is still
-			// running. This can be changed after a Schedule has taken some Actions, and some changes might produce
-			// unintuitive results. In general, the later policy overrides the earlier policy.
-			//
-			// Optional: defaulted to SCHEDULE_OVERLAP_POLICY_SKIP
-			// TODO Overlap enumspb.ScheduleOverlapPolicy
-
-			// // ScheduleBackfill - Runs though the specified time periods and takes Actions as if that time passed by right now, all at once. The
-			// // overlap policy can be overridden for the scope of the ScheduleBackfill.
-			// TODO ScheduleBackfill []ScheduleBackfill
-		},
-	}
+	resp.Schema = tfschema.MakeResourceScheduleSchema()
 }
-
-func makeStartWorkflowAttributes() map[string]schema.Attribute {
-	return map[string]schema.Attribute{
-		"workflow_id": schema.StringAttribute{
-			Optional:            true,
-			Computed:            true,
-			MarkdownDescription: scheduleWAIDDocs,
-			PlanModifiers: []planmodifier.String{
-				stringplanmodifier.UseStateForUnknown(),
-			},
-		},
-		"workflow": schema.StringAttribute{
-			Required:            true,
-			MarkdownDescription: scheduleWAWorkflowDocs,
-			PlanModifiers: []planmodifier.String{
-				stringplanmodifier.UseStateForUnknown(),
-			},
-		},
-		// "args": schema.ListAttribute{
-		// 	Optional:            true,
-		// 	ElementType:         types.StringType,
-		// 	MarkdownDescription: scheduleWAArgDocs,
-		// 	PlanModifiers: []planmodifier.List{
-		// 		listplanmodifier.UseStateForUnknown(),
-		// 	},
-		// },
-		"task_queue": schema.StringAttribute{
-			Required:            true,
-			MarkdownDescription: scheduleWATaskQueueDocs,
-			PlanModifiers: []planmodifier.String{
-				stringplanmodifier.UseStateForUnknown(),
-			},
-		},
-		"execution_timeout": schema.StringAttribute{
-			Optional:            true,
-			MarkdownDescription: scheduleWAWorkflowExecutionTimeoutDocs,
-			PlanModifiers: []planmodifier.String{
-				stringplanmodifier.UseStateForUnknown(),
-			},
-		},
-		"run_timeout": schema.StringAttribute{
-			Optional:            true,
-			MarkdownDescription: scheduleWAWorkflowRunTimeoutDocs,
-			PlanModifiers: []planmodifier.String{
-				stringplanmodifier.UseStateForUnknown(),
-			},
-		},
-		"task_timeout": schema.StringAttribute{
-			Optional:            true,
-			MarkdownDescription: scheduleWAWorkflowTaskTimeoutDocs,
-			PlanModifiers: []planmodifier.String{
-				stringplanmodifier.UseStateForUnknown(),
-			},
-		},
-		// // RetryPolicy - Retry policy for workflow. If a retry policy is specified, in case of workflow failure
-		// // server will start new workflow execution if needed based on the retry policy.
-		// //RetryPolicy *RetryPolicy
-		// scheduleWARetryPolicyDocs
-		// "memo_json": schema.StringAttribute{
-		// 	Optional:            true,
-		// 	MarkdownDescription: scheduleWAMemoDocs,
-		// 	// PlanModifiers: []planmodifier.String{
-		// 	// 	stringplanmodifier.UseStateForUnknown(),
-		// 	// },
-		// },
-		// "search_attributes_json": schema.StringAttribute{
-		// 	Optional:            true,
-		// 	MarkdownDescription: scheduleWASearchAttributesDocs,
-		// 	// PlanModifiers: []planmodifier.String{
-		// 	// 	stringplanmodifier.UseStateForUnknown(),
-		// 	// },
-		// },
-	}
-}
-
-//////////////////////////////////////////////////////////////////////////////
 
 func (r *ScheduleResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	// Prevent panic if the provider has not been configured.
@@ -567,82 +414,3 @@ func getWorkflowName(workflow interface{}) types.String {
 		return types.StringUnknown()
 	}
 }
-
-//////////////////////////////////////////////////////////////////////////////
-
-const durationDocs = `A duration string is a possibly signed sequence of decimal numbers, each with optional fraction and a unit suffix, such as "300ms", "-1.5h" or "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h", "d", "w", "y".`
-
-const scheduleIDDocs = `The business identifier of the schedule.`
-
-const scheduleScheduleDocs = `Describes when Actions should be taken.`
-
-const scheduleActionDocs = `Which Action to take. Currently only start_workflow is supported.`
-
-const scheduleOverlapDocs = `Controls what happens when an Action would be started by a Schedule at the same time that an older Action is still
-running. This can be changed after a Schedule has taken some Actions, and some changes might produce
-unintuitive results. In general, the later policy overrides the earlier policy.
-Optional: defaulted to SCHEDULE_OVERLAP_POLICY_SKIP`
-
-const scheduleCatchupWindowDocs = `The Temporal Server might be down or unavailable at the time when a Schedule should take an Action.
-When the Server comes back up, CatchupWindow controls which missed Actions should be taken at that point. The default is one
-minute, which means that the Schedule attempts to take any Actions that wouldn't be more than one minute late. It
-takes those Actions according to the Overlap. An outage that lasts longer than the Catchup
-Window could lead to missed Actions.
-Optional: defaulted to 1 minute`
-
-const schedulePauseOnFailureDocs = `When an Action times out or reaches the end of its Retry Policy the Schedule will pause.
-With SCHEDULE_OVERLAP_POLICY_ALLOW_ALL, this pause might not apply to the next Action, because the next Action
-might have already started previous to the failed one finishing. Pausing applies only to Actions that are scheduled
-to start after the failed one finishes.
-Optional: defaulted to false`
-
-const scheduleNoteDocs = `Informative human-readable message with contextual notes, e.g. the reason
-a Schedule is paused. The system may overwrite this message on certain
-conditions, e.g. when pause-on-failure happens.`
-
-const schedulePausedDocs = `Start in paused state. Optional: defaulted to false`
-
-const scheduleRemainingActionsDocs = `limit the number of Actions to take.
-This number is decremented after each Action is taken, and Actions are not
-taken when the number is '0' (unless ScheduleHandle.Trigger is called).
-Optional: defaulted to zero`
-
-const scheduleTriggerImmediatelyDocs = `Trigger one Action immediately on creating the schedule.
-Optional: defaulted to false`
-
-const scheduleScheduleBackfillDocs = `Runs though the specified time periods and takes Actions as if that time passed by right now, all at once. The
-overlap policy can be overridden for the scope of the ScheduleBackfill.`
-
-const scheduleMemoDocs = `Optional non-indexed info that will be shown in list schedules.`
-
-const scheduleSearchAttributesDocs = `Optional indexed info that can be used in query of List schedules APIs (only
-supported when Temporal server is using advanced visibility). The key and value type must be registered on Temporal server side.
-Use GetSearchAttributes API to get valid key and corresponding value type.`
-
-//////////////////////////////////////////////////////////////////////////////
-
-const scheduleWAIDDocs = `The business identifier of the workflow execution.
-The workflow ID of the started workflow may not match this exactly,
-it may have a timestamp appended for uniqueness.
-Optional: defaulted to a uuid.`
-
-const scheduleWAWorkflowDocs = `Type name of the Workflow to run.`
-
-const scheduleWAArgDocs = `Arguments to pass to the workflow.`
-
-const scheduleWATaskQueueDocs = `The workflow tasks of the workflow are scheduled on the queue with this name.
-This is also the name of the activity task queue on which activities are scheduled.`
-
-const scheduleWAWorkflowExecutionTimeoutDocs = `The timeout for duration of workflow execution.`
-
-const scheduleWAWorkflowRunTimeoutDocs = `The timeout for duration of a single workflow run.`
-
-const scheduleWAWorkflowTaskTimeoutDocs = `The timeout for processing workflow task from the time the worker pulled this task.`
-
-const scheduleWARetryPolicyDocs = `Retry policy for workflow. If a retry policy is specified, in case of workflow failure
-server will start new workflow execution if needed based on the retry policy.`
-
-const scheduleWAMemoDocs = `Optional non-indexed info that will be shown in list workflow.`
-
-const scheduleWASearchAttributesDocs = `Optional indexed info that can be used in query of List/Scan/Count workflow APIs (only
- supported when Temporal server is using advanced visiblity). The key and value type must be registered on Temporal server side.`
