@@ -58,15 +58,15 @@ func (d *ScheduleDataSource) Configure(ctx context.Context, req datasource.Confi
 		return
 	}
 
-	tclient, ok := req.ProviderData.(temporalClient.Client)
+	tdata, ok := req.ProviderData.(TemporalProviderData)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
-			fmt.Sprintf("Expected temporalClient.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			fmt.Sprintf("Expected TemporalProviderData, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
 	}
-	d.tclient = tclient
+	d.tclient = tdata.tclient
 }
 
 func (d *ScheduleDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {

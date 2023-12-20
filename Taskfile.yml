@@ -23,6 +23,10 @@ tasks:
     cmds:
       - go install .
 
+  list-updates:
+    cmds:
+      - go list -u -m all
+
   # Should just complain that it shouldn't be run!
   run-main:
     deps: [build]
@@ -38,6 +42,12 @@ tasks:
     deps: [test]
     cmds:
       - TF_ACC=1 TEMPORAL_CLI_ADDRESS=localhost:7233 go test -count=1 -parallel=4 -timeout 10m -v ./...
+
+  # Run temporal dev server
+  # brew install temporal
+  run-temporal-dev:
+    cmds:
+      - temporal server start-dev
 
   # Example terraform tasks to help dev
   tf-example-plan:

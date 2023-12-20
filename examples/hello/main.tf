@@ -14,25 +14,45 @@ provider "temporal" {
   namespace = "default"
 }
 
-// Schedule round-trip
-resource "temporal_schedule" "test" {
-  id = "test-schedule"
-  action {
-    start_workflow {
-      workflow = "my-workflow"
-      task_queue = "my-task-queue"
-    }
+// Namespace round-trip
+resource "temporal_namespace" "hello" {
+  name = "hello"
+  lifecycle {
+    prevent_destroy = true // Terraform Provider can't delete it anyway
   }
 }
 
-data "temporal_schedule" "test" {
-  id = temporal_schedule.test.id
+data "temporal_namespace" "hello" {
+  name = temporal_namespace.hello.name
 }
 
-output "test-id" {
-  value = data.temporal_schedule.test.id
+output "namespace_owner_email" {
+  value = data.temporal_namespace.hello.owner_email
 }
 
-output "test-desc" {
-  value = data.temporal_schedule.test.desc
-}
+
+// Schedule round-trip
+# resource "temporal_schedule" "test" {
+#   id = "test-schedule"
+#   # schedule {
+#   #   crons = ["CRON_TZ=America/New_York 20 16 * * * *"]
+#   # }
+#   action = {
+#     start_workflow = {
+#       workflow   = "my-workflow"
+#       task_queue = "my-task-queue"
+#     }
+#   }
+# }
+
+# data "temporal_schedule" "test" {
+#   id = temporal_schedule.test.id
+# }
+
+# output "test-id" {
+#   value = data.temporal_schedule.test.id
+# }
+
+# output "test-desc" {
+#   value = data.temporal_schedule.test.desc
+# }

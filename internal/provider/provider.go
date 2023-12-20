@@ -36,6 +36,13 @@ type TemporalProviderModel struct {
 	Namespace types.String `tfsdk:"namespace"`
 }
 
+// TemporalProviderData describes the internal data used by the Provider.
+// It is used by the Configure method to pass data to the Resource and Data Source
+type TemporalProviderData struct {
+	tclient  temporalClient.Client
+	nsclient temporalClient.NamespaceClient
+}
+
 func (p *TemporalProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
 	resp.TypeName = "temporal"
 	resp.Version = p.version
@@ -85,25 +92,39 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	}
 
 	// Example client configuration for data sources and resources
-	tclient, _ := temporalClient.NewLazyClient(temporalClient.Options{
+	topts := temporalClient.Options{
 		HostPort:  hostPort,
 		Namespace: namespace,
 		Logger:    zapadapter.NewZapAdapter(buildProviderZapLogger()),
 		Identity:  getProviderTemporalIdentity(),
-	})
+	}
+	tclient, err := temporalClient.NewLazyClient(topts)
+	if err != nil {
+		panic("TODO: remove panic and use Diagnostics")
+	}
+	nsclient, err := temporalClient.NewNamespaceClient(topts)
+	if err != nil {
+		panic("TODO: remove panic and use Diagnostics")
+	}
 
-	resp.DataSourceData = tclient
-	resp.ResourceData = tclient
+	providerData := TemporalProviderData{
+		tclient:  tclient,
+		nsclient: nsclient,
+	}
+	resp.DataSourceData = providerData
+	resp.ResourceData = providerData
 }
 
 func (p *TemporalProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		NewNamespaceResource,
 		NewScheduleResource,
 	}
 }
 
 func (p *TemporalProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
+		NewNamespaceDataSource,
 		NewScheduleDataSource,
 	}
 }

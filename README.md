@@ -14,11 +14,14 @@ This project is not affiliated with nor supported by Temporal Technologies, Inc.
 
 Supported Temporal Features:
 
- * [ ] Schedule
- * [ ] Workflow
- * [ ] Args
- * [ ] Memo
- * [ ] SearchAttributes
+Temporal Feature | Data Source? | Resource? | Notes
+| :--------------- | :---| :---| :----
+Namespaces | ✅ | ✅ | Cannot Delete (no-op). Missing some fields.
+Schedule | ✅ | | Data Source only has raw JSON in `desc` field.
+Workflow | | |
+Args | | | |
+Memo | | | |
+SearchAttributes | | | |
 
 ----
 
@@ -63,7 +66,7 @@ output "test-desc" {
 temporal server start-dev
 ```
 
-Reminder put this in `~/.terraformrc`:
+To use the binary produced by `task install`, put this in `~/.terraformrc`:
 
 ```
 provider_installation {

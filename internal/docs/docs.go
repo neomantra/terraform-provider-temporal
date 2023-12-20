@@ -2,6 +2,16 @@ package docs
 
 ///////////////////////////////////////////////////////////////////////////////
 
+const NamespaceNameDocs = `Namespace name`
+
+const NamespaceRetentionHoursDocs = `Namespace retention period in hours. Minimum is 24 per Temporal system.  Default is 72 hours.`
+
+const NamespaceDescriptionDocs = `Namespace description`
+
+const NamespaceOwnerEmailDocs = `Namespace owner email`
+
+///////////////////////////////////////////////////////////////////////////////
+
 const DurationDocs = `A duration string is a possibly signed sequence of decimal numbers, each with optional fraction and a unit suffix, such as "300ms", "-1.5h" or "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h", "d", "w", "y".`
 
 const ScheduleIDDocs = `The business identifier of the schedule.`
@@ -109,6 +119,8 @@ Notes:
 		treating DayOfMonth and DayOfWeek as "or" instead of "and" when both
 		are set is not implemented.
 `
+const ScheduleSpecJitterDocs = `Jitter - All times will be incremented by a random value from 0 to this amount of jitter, capped
+by the time until the next schedule. Optional: Defaulted to 0`
 
 //////////////////////////////////////////////////////////////////////////////
 

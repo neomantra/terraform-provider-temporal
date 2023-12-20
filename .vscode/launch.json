@@ -10,7 +10,10 @@
             "request": "launch",
             "mode": "auto",
             "program": "${fileDirname}",
-            "env": {"PKG_NAME": "${relativeFileDirname}"}, 
+            "env": {
+                "PKG_NAME": "${relativeFileDirname}",
+                "TF_LOG": "info",
+            }, 
             "args": [
                 "-test.v",
                 "-test.run",
