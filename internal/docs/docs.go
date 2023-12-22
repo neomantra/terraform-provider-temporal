@@ -119,8 +119,44 @@ Notes:
 		treating DayOfMonth and DayOfWeek as "or" instead of "and" when both
 		are set is not implemented.
 `
+
+const ScheduleSpecStartAtDocs = "StartAt - Any times before `startAt` will be skipped. Together, `startAt` and `endAt` make an inclusive interval.  Optional: Defaulted to the beginning of time"
+
+const ScheduleSpecEndAtDocs = "EndAt - Any times after `endAt` will be skipped. Optional: Defaulted to the end of time"
+
 const ScheduleSpecJitterDocs = `Jitter - All times will be incremented by a random value from 0 to this amount of jitter, capped
 by the time until the next schedule. Optional: Defaulted to 0`
+
+const ScheduleSpecTimeZoneDocs = `TimeZone - IANA time zone name, for example "US/Eastern". The time zone to use for interpreting the schedule. Optional: Defaulted to UTC`
+
+//////////////////////////////////////////////////////////////////////////////
+
+const ScheduleCalendarSpecDocs = `An event specification relative to the calendar, similar to a traditional cron specification.
+A timestamp matches if at least one range of each field matches the
+corresponding fields of the timestamp, except for year: if year is missing,
+that means all years match. For all fields besides year, at least one Range must be present to match anything.`
+
+const ScheduleCalendarSecondDocs = `Second range to match (0-59). default: matches 0`
+const ScheduleCalendarMinuteDocs = `Minute range to match (0-59). default: matches 0`
+const ScheduleCalendarHourDocs = `Hour range to match (0-23). default: matches 0`
+const ScheduleCalendarDayOfMonthDocs = `DayOfMonth range to match (1-31).  default: matches all days`
+const ScheduleCalendarMonthDocs = `Month range to match (1-12).  default: matches all months`
+const ScheduleCalendarYearDocs = `Year range to match. default: empty that matches all years`
+const ScheduleCalendarDayOfWeekDocs = `DayOfWeek range to match (0-6; 0 is Sunday). default: matches all days of the week`
+const ScheduleCalendarCommentDocs = `Comment - Description of the intention of this schedule.`
+
+//////////////////////////////////////////////////////////////////////////////
+
+const ScheduleRangeDocs = `ScheduleRange represents a set of integer values, used to match fields of a calendar
+time in StructuredCalendarSpec. If end < start, then end is interpreted as
+equal to start. This means you can use a Range with start set to a value, and
+end and step unset (defaulting to 0) to represent a single value.`
+
+const ScheduleRangeStartDocs = `Start of the range (inclusive)`
+
+const ScheduleRangeEndDocs = `End of the range (inclusive). Optional: defaulted to Start`
+
+const ScheduleRangeStepDocs = `Step to be take between each value. Optional: defaulted to 1`
 
 //////////////////////////////////////////////////////////////////////////////
 

@@ -34,7 +34,7 @@ func TestAccScheduleResource_Minimal(t *testing.T) {
 			{
 				Config: testAccScheduleResourceConfig_Minimal("task-queue-2"),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("temporal_schedule.test-minimal", "action.start_workflow.task_queue", "task-queue-2"),
+					resource.TestCheckResourceAttr("temporal_schedule.test-minimal", "start_workflow.task_queue", "task-queue-2"),
 				),
 			},
 			// Delete testing automatically occurs in TestCase
@@ -46,16 +46,14 @@ func testAccScheduleResourceConfig_Minimal(taskQueue string) string {
 	return fmt.Sprintf(`
 resource "temporal_schedule" "test-minimal" {
   id = "test-schedule-minimal"
-  action {
-    start_workflow {
-      workflow   = "my-workflow-type"
-      task_queue = "%s"   // one dynamic template for testing
-    }
+  start_workflow = {
+    workflow   = "my-workflow-type"
+    task_queue = "%s"   // one dynamic template for testing
   }
 }`, taskQueue)
 }
 
-///////////////////////////////////////////////////////////////////////////////
+// ///////////////////////////////////////////////////////////////////////////////
 
 func TestAccScheduleResource_Full(t *testing.T) {
 	resource.Test(t, resource.TestCase{
@@ -84,7 +82,7 @@ func TestAccScheduleResource_Full(t *testing.T) {
 			{
 				Config: testAccScheduleResourceConfig_Full("task-queue-2"),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("temporal_schedule.test-full", "action.start_workflow.task_queue", "task-queue-2"),
+					resource.TestCheckResourceAttr("temporal_schedule.test-full", "start_workflow.task_queue", "task-queue-2"),
 				),
 			},
 			// Delete testing automatically occurs in TestCase
@@ -96,16 +94,21 @@ func testAccScheduleResourceConfig_Full(taskQueue string) string {
 	return fmt.Sprintf(`
 resource "temporal_schedule" "test-full" {
   id = "test-schedule-full"
-  action {
-    start_workflow {
-      workflow_id       = "my-workflow-id"
-      workflow          = "my-workflow-type"
-	  //args            = ["one", "two", 3]
-      task_queue        = "%s"   // one dynamic template for testing
-	  execution_timeout = "30m0s"
-	  run_timeout       = "1h0m0s"
-	  task_timeout      = "43s"
-    }
+  schedule = {
+   #crons = ["30 2 * * 5"]
+   #start_at  = "2023-04-20T04:20:01Z"
+   #end_at    = "2024-08-31T19:00:01Z"
+   jitter    = "15s"
+   time_zone = "Antarctica/South_Pole"
+  }
+  start_workflow = {
+    workflow_id       = "my-workflow-id"
+    task_queue        = "%s"   // one dynamic template for testing
+    workflow          = "my-workflow-type"
+    # args            = ["one", "two", 3]
+    # execution_timeout = "30m0s"
+    # run_timeout       = "1h0m0s"
+    # task_timeout      = "43s"
   }
   catchup_window      = "15s"
   pause_on_failure    = true

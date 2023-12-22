@@ -213,7 +213,10 @@ func (r *NamespaceResource) Delete(ctx context.Context, req resource.DeleteReque
 	}
 
 	name := state.Name.ValueString()
-	tflog.Info(ctx, fmt.Sprintf("NamespaceResource Delete DOES NOTHING RIGHT NOW: %s", name))
+	tflog.Info(ctx, fmt.Sprintf("NamespaceResource delete %s", name))
+	resp.Diagnostics.AddWarning("Temporal Error", fmt.Sprintf(
+		"This Provider cannot destroy a temporal_namespace '%s', it must be done manually:\n    temporal operator namespace delete %s\n",
+		name, name))
 }
 
 //////////////////////////////////////////////////////////////////////////////

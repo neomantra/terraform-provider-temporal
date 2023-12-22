@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -15,6 +16,7 @@ import (
 
 	temporalEnums "go.temporal.io/api/enums/v1"
 	temporalClient "go.temporal.io/sdk/client"
+	temporalSdk "go.temporal.io/sdk/temporal"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -30,93 +32,6 @@ type ScheduleResource struct {
 	tclient temporalClient.Client
 }
 
-// ScheduleResourceModel describes the resource data model.
-type ScheduleResourceModel struct {
-	ScheduleId         types.String         `tfsdk:"id"`
-	ScheduleSpec       *ScheduleSpecModel   `tfsdk:"schedule"`
-	Action             *ScheduleActionModel `tfsdk:"action"`
-	Overlap            types.String         `tfsdk:"overlap"`
-	CatchupWindow      types.String         `tfsdk:"catchup_window"`
-	PauseOnFailure     types.Bool           `tfsdk:"pause_on_failure"`
-	Note               types.String         `tfsdk:"note"`
-	Paused             types.Bool           `tfsdk:"paused"`
-	RemainingActions   types.Int64          `tfsdk:"remaining_actions"`
-	TriggerImmediately types.Bool           `tfsdk:"trigger_immediately"`
-	//ScheduleBackfill []ScheduleBackfill `tfsdk:"schedule_backfill"`
-	//Memo             types.String `tfsdk:"memo_json"`
-	//SearchAttributes types.String `tfsdk:"search_attributes_json"`
-}
-
-type ScheduleSpecModel struct {
-	// input.Description.Schedule.Spec = &temporalClient.ScheduleSpec{
-	// Calendars       []ScheduleCalendarSpecModel `tfsdk:"calendars"`
-	// Intervals       []ScheduleIntervalSpecModel `tfsdk:"intervals"`
-	CronExpressions types.List `tfsdk:"cron"`
-	// Skip            []ScheduleCalendarSpecModel `tfsdk:"skip"`
-	// StartAt         types.String                `tfsdk:"start_at"` // time.Time
-	// EndAt           types.String                `tfsdk:"end_at"`   // time.Time
-	// Jitter          types.Int64                 `tfsdk:"jitter"`
-	// TimeZoneName    types.String                `tfsdk:"time_zone"`
-}
-
-type ScheduleRangeModel struct {
-	// Start of the range (inclusive)
-	Start types.Int64 `tfsdk:"start"`
-	// End of the range (inclusive)
-	// Optional: defaulted to Start
-	End types.Int64 `tfsdk:"end"`
-	// Step to be take between each value
-	// Optional: defaulted to 1
-	Step types.Int64 `tfsdk:"step"`
-}
-
-type ScheduleCalendarSpecModel struct {
-	// Second range to match (0-59). default: matches 0
-	Second []ScheduleRangeModel `tfsdk:"second"`
-	// Minute range to match (0-59). default: matches 0
-	Minute []ScheduleRangeModel `tfsdk:"minute"`
-	// Hour range to match (0-23). default: matches 0
-	Hour []ScheduleRangeModel `tfsdk:"hour"`
-	// DayOfMonth range to match (1-31).  default: matches all days
-	DayOfMonth []ScheduleRangeModel `tfsdk:"day_of_month"`
-	// Month range to match (1-12).  default: matches all months
-	Month []ScheduleRangeModel `tfsdk:"month"`
-	// Year range to match. default: empty that matches all years
-	Year []ScheduleRangeModel `tfsdk:"year"`
-	// DayOfWeek range to match (0-6; 0 is Sunday). default: matches all days of the week
-	DayOfWeek []ScheduleRangeModel `tfsdk:"day_of_week"`
-	// Comment - Description of the intention of this schedule.
-	Comment types.String `tfsdk:"comment"`
-}
-
-type ScheduleIntervalSpecModel struct {
-	// Every - DURATION describes the period to repeat the interval.
-	Every types.String `tfsdk:"every"`
-	// Offset - DURATION is a fixed offset added to the intervals period. // Optional: Defaulted to 0
-	Offset types.String `tfsdk:"offset"`
-}
-
-type ScheduleActionModel struct {
-	// As other Scheduled Actions are invented by Temporal, add them here.
-	StartWorkflow *ScheduleWorkflowActionResourceModel `tfsdk:"start_workflow"`
-}
-
-// ScheduleWorkflowAction implements ScheduleAction to launch a workflow.
-type ScheduleWorkflowActionResourceModel struct {
-	WorkflowId types.String `tfsdk:"workflow_id"`
-	Workflow   types.String `tfsdk:"workflow"`
-	//Args                     types.List   `tfsdk:"args"`
-	TaskQueue                types.String `tfsdk:"task_queue"`
-	WorkflowExecutionTimeout types.String `tfsdk:"execution_timeout"`
-	WorkflowRunTimeout       types.String `tfsdk:"run_timeout"`
-	WorkflowTaskTimeout      types.String `tfsdk:"task_timeout"`
-	// RetryPolicy - Retry policy for workflow. If a retry policy is specified, in case of workflow failure
-	// server will start new workflow execution if needed based on the retry policy.
-	//RetryPolicy *RetryPolicy
-	//Memo             types.String `tfsdk:"memo_json"`
-	//SearchAttributes types.String `tfsdk:"search_attributes_json"`
-}
-
 //////////////////////////////////////////////////////////////////////////////
 
 func (r *ScheduleResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -124,7 +39,7 @@ func (r *ScheduleResource) Metadata(ctx context.Context, req resource.MetadataRe
 }
 
 func (r *ScheduleResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = tfschema.MakeResourceScheduleSchema()
+	resp.Schema = tfschema.GetResourceScheduleSchema()
 }
 
 func (r *ScheduleResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -133,241 +48,217 @@ func (r *ScheduleResource) Configure(ctx context.Context, req resource.Configure
 		return
 	}
 
-	tclient, ok := req.ProviderData.(temporalClient.Client)
+	tdata, ok := req.ProviderData.(TemporalProviderData)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected temporalClient.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			fmt.Sprintf("ScheduleResource expected temporalClient.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
 	}
-	r.tclient = tclient
+	r.tclient = tdata.tclient
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
 func (r *ScheduleResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	// Read Terraform plan data into the model
-	var data *ScheduleResourceModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	// Read Terraform PLAN data into the models
+	var plan tfschema.ScheduleResourceModel
+	diags := req.Plan.Get(ctx, &plan)
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var err error
-	var action *temporalClient.ScheduleWorkflowAction
-	// dataConverter := converter.GetDefaultDataConverter()
-
-	if data.Action != nil && data.Action.StartWorkflow != nil {
-		wfAction := data.Action.StartWorkflow
-		action = &temporalClient.ScheduleWorkflowAction{
-			ID:                       wfAction.WorkflowId.ValueString(),
-			Workflow:                 wfAction.Workflow.ValueString(),
-			TaskQueue:                wfAction.TaskQueue.ValueString(),
-			WorkflowExecutionTimeout: toDuration(wfAction.WorkflowExecutionTimeout),
-			WorkflowRunTimeout:       toDuration(wfAction.WorkflowRunTimeout),
-			WorkflowTaskTimeout:      toDuration(wfAction.WorkflowTaskTimeout),
-		}
-		// action.Args action.Memo action.SearchAttributes
+	// Marshal Terraform type to Temporal Schedule
+	scheduleOptions := temporalClient.ScheduleOptions{
+		ID:                 plan.ScheduleId.ValueString(),
+		Overlap:            temporalEnums.SCHEDULE_OVERLAP_POLICY_SKIP, // TODO: convert from enum
+		CatchupWindow:      toDuration(plan.CatchupWindow),
+		PauseOnFailure:     plan.PauseOnFailure.ValueBool(),
+		Note:               plan.Note.ValueString(),
+		Paused:             plan.Paused.ValueBool(),
+		RemainingActions:   int(plan.RemainingActions.ValueInt64()),
+		TriggerImmediately: plan.TriggerImmediately.ValueBool(),
+		// ScheduleBackfill
 	}
 
-	scheduleOptions := temporalClient.ScheduleOptions{
-		ID: data.ScheduleId.ValueString(),
-		// TODO: we must express all this in Terraform!
-		// Spec: &temporalClient.ScheduleSpec{
-		// 	Intervals: []temporalClient.ScheduleIntervalSpec{
-		// 		{Every: 10},
-		// 	},
-		// },
-		Action:             action,
-		Overlap:            temporalEnums.SCHEDULE_OVERLAP_POLICY_SKIP, // TODO: convert from enum
-		CatchupWindow:      toDuration(data.CatchupWindow),
-		PauseOnFailure:     data.PauseOnFailure.ValueBool(),
-		Note:               data.Note.ValueString(),
-		Paused:             data.Paused.ValueBool(),
-		RemainingActions:   int(data.RemainingActions.ValueInt64()),
-		TriggerImmediately: data.TriggerImmediately.ValueBool(),
-		// ScheduleBackfill
+	if plan.ScheduleSpec != nil {
+		// scheduleOptions.Spec.StartAt, diags = plan.ScheduleSpec.StartAt.ValueRFC3339Time()
+		// resp.Diagnostics.Append(diags...)
+		// scheduleOptions.Spec.EndAt, diags = plan.ScheduleSpec.EndAt.ValueRFC3339Time()
+		// resp.Diagnostics.Append(diags...)
+		//scheduleOptions.Spec.CronExpressions = toStringArray(ctx, plan.ScheduleSpec.Crons)
+		scheduleOptions.Spec.Jitter = toDuration(plan.ScheduleSpec.Jitter)
+		scheduleOptions.Spec.TimeZoneName = plan.ScheduleSpec.TimeZoneName.ValueString()
+	}
+
+	if plan.StartWorkflow != nil {
+		scheduleOptions.Action = &temporalClient.ScheduleWorkflowAction{
+			ID:                       plan.StartWorkflow.WorkflowId.ValueString(),
+			Workflow:                 plan.StartWorkflow.Workflow.ValueString(),
+			TaskQueue:                plan.StartWorkflow.TaskQueue.ValueString(),
+			WorkflowExecutionTimeout: toDuration(plan.StartWorkflow.WorkflowExecutionTimeout),
+			WorkflowRunTimeout:       toDuration(plan.StartWorkflow.WorkflowRunTimeout),
+			WorkflowTaskTimeout:      toDuration(plan.StartWorkflow.WorkflowTaskTimeout),
+		}
 	}
 	// Args Memo SearchAttributes
 
 	// Invoke Create on the Temporal API
 	scheduleHandle, err := r.tclient.ScheduleClient().Create(ctx, scheduleOptions)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Create: Unable to create Schedule: %s", err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("ScheduleResource Create: Unable to create Schedule: %s", err))
 		return
 	}
-	data.ScheduleId = types.StringValue(scheduleHandle.GetID())
+	createdScheduleID := scheduleHandle.GetID()
 
 	// Fetch the new Schedule's description from the Server
 	desc, err := scheduleHandle.Describe(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Read: Unable to describe created Schedule %s : %s", scheduleHandle.GetID(), err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("ScheduleResource Create: Unable to describe created Schedule %s : %s", createdScheduleID, err))
 		return
 	}
-	switch newAction := desc.Schedule.Action.(type) {
-	case *temporalClient.ScheduleWorkflowAction:
-		if data.Action == nil {
-			data.Action = &ScheduleActionModel{}
-		}
-		if data.Action.StartWorkflow == nil {
-			data.Action.StartWorkflow = &ScheduleWorkflowActionResourceModel{}
-		}
-		data.Action.StartWorkflow.WorkflowId = types.StringValue(newAction.ID)
-		data.Action.StartWorkflow.Workflow = getWorkflowName(newAction.Workflow)
-		data.Action.StartWorkflow.TaskQueue = types.StringValue(newAction.TaskQueue)
-		data.Action.StartWorkflow.WorkflowExecutionTimeout = fromDuration(newAction.WorkflowExecutionTimeout)
-		data.Action.StartWorkflow.WorkflowRunTimeout = fromDuration(newAction.WorkflowRunTimeout)
-		data.Action.StartWorkflow.WorkflowTaskTimeout = fromDuration(newAction.WorkflowTaskTimeout)
-		// Args Memo SearchAttributes
-	}
+
+	// Construct final STATE, including Temporal-created values
+	state := tfschema.ScheduleResourceModel{}
+	assignScheduleResourceModelFromDescription(createdScheduleID, desc.Schedule, &state)
 
 	// Save data into Terraform state
-	tflog.Info(ctx, fmt.Sprintf("Created Schedule resource %s", data.ScheduleId.ValueString()))
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	tflog.Info(ctx, fmt.Sprintf("Created Schedule resource ID: %s createID: %s", state.ScheduleId.ValueString(), createdScheduleID))
+	diags = resp.State.Set(ctx, &state)
+	resp.Diagnostics.Append(diags...)
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
 func (r *ScheduleResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	// Read Terraform prior state data into the model
-	var data *ScheduleResourceModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	var plan *tfschema.ScheduleResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	// Fetch the Schedule's description from the Server
-	desc, err := r.tclient.ScheduleClient().GetHandle(ctx, data.ScheduleId.ValueString()).Describe(ctx)
+	scheduleID := plan.ScheduleId.ValueString()
+	desc, err := r.tclient.ScheduleClient().GetHandle(ctx, plan.ScheduleId.ValueString()).Describe(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Read: Unable to describe Schedule %s : %s", data.ScheduleId.ValueString(), err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("ScheduleResource Read: Unable to describe Schedule %s : %s", scheduleID, err))
 		return
 	}
 
-	// Convert from the Temporal Schedule model to the Terraform data model
-	if policy := desc.Schedule.Policy; policy != nil {
-		data.Overlap = types.StringValue(policy.Overlap.String())
-		data.CatchupWindow = fromDuration(policy.CatchupWindow)
-		data.PauseOnFailure = types.BoolValue(policy.PauseOnFailure)
-	}
-	if state := desc.Schedule.State; state != nil {
-		data.Note = fromString(state.Note)
-		data.Paused = types.BoolValue(state.Paused)
-		data.RemainingActions = types.Int64Value(int64(state.RemainingActions))
-		if data.TriggerImmediately.IsUnknown() || data.TriggerImmediately.IsNull() {
-			// TriggerImmediately isn't stored in Temporal state, so we clear it out here
-			data.TriggerImmediately = types.BoolValue(false)
-		}
-		// LimitedActions ?
-	}
-	// Memo SearchAttributes
-
-	switch action := desc.Schedule.Action.(type) {
-	case *temporalClient.ScheduleWorkflowAction:
-		if data.Action == nil {
-			data.Action = &ScheduleActionModel{}
-		}
-		if data.Action.StartWorkflow == nil {
-			data.Action.StartWorkflow = &ScheduleWorkflowActionResourceModel{}
-		}
-		data.Action.StartWorkflow.WorkflowId = types.StringValue(action.ID)
-		data.Action.StartWorkflow.Workflow = getWorkflowName(action.Workflow)
-		data.Action.StartWorkflow.TaskQueue = types.StringValue(action.TaskQueue)
-		data.Action.StartWorkflow.WorkflowExecutionTimeout = fromDuration(action.WorkflowExecutionTimeout)
-		data.Action.StartWorkflow.WorkflowRunTimeout = fromDuration(action.WorkflowRunTimeout)
-		data.Action.StartWorkflow.WorkflowTaskTimeout = fromDuration(action.WorkflowTaskTimeout)
-	}
+	// Construct final STATE, including Temporal-created values
+	state := tfschema.ScheduleResourceModel{}
+	assignScheduleResourceModelFromDescription(scheduleID, desc.Schedule, &state)
 
 	// Save updated data into Terraform state
-	tflog.Info(ctx, fmt.Sprintf("Read ScheduledWorkflow resource %s", data.ScheduleId.ValueString()))
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	tflog.Info(ctx, fmt.Sprintf("Read ScheduledWorkflow resource %s", state.ScheduleId.ValueString()))
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
 func (r *ScheduleResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	// Read Terraform plan data into the model
-	var data *ScheduleResourceModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	// Read Terraform PLAN data into the models
+	var plan tfschema.ScheduleResourceModel
+	diags := req.Plan.Get(ctx, &plan)
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Invoke Create on the Temporal API
-	err := r.tclient.ScheduleClient().GetHandle(ctx, data.ScheduleId.ValueString()).Update(ctx, temporalClient.ScheduleUpdateOptions{
+	// Invoke Update on the Temporal API
+	scheduleID := plan.ScheduleId.ValueString()
+	err := r.tclient.ScheduleClient().GetHandle(ctx, scheduleID).Update(ctx, temporalClient.ScheduleUpdateOptions{
 		DoUpdate: func(input temporalClient.ScheduleUpdateInput) (*temporalClient.ScheduleUpdate, error) {
 			// update action
-			var wfAction *temporalClient.ScheduleWorkflowAction
-			switch actionType := input.Description.Schedule.Action.(type) {
-			case *temporalClient.ScheduleWorkflowAction:
-				wfAction = actionType
+			scheduleUpdate := &temporalClient.ScheduleUpdate{
+				Schedule: &temporalClient.Schedule{
+					Policy: &temporalClient.SchedulePolicies{
+						Overlap:        temporalEnums.SCHEDULE_OVERLAP_POLICY_SKIP, // TODO: convert from enum
+						CatchupWindow:  toDuration(plan.CatchupWindow),
+						PauseOnFailure: plan.PauseOnFailure.ValueBool(),
+					},
+					State: &temporalClient.ScheduleState{
+						Note:             plan.Note.ValueString(),
+						RemainingActions: int(plan.RemainingActions.ValueInt64()),
+					},
+					Spec: &temporalClient.ScheduleSpec{},
+				},
 			}
-			if data.Action != nil && data.Action.StartWorkflow != nil {
-				if wfAction == nil {
-					wfAction = &temporalClient.ScheduleWorkflowAction{}
-					input.Description.Schedule.Action = wfAction
-				}
-				workflow := data.Action.StartWorkflow
-				wfAction.ID = workflow.WorkflowId.ValueString()
-				wfAction.Workflow = workflow.Workflow.ValueString()
-				wfAction.TaskQueue = workflow.TaskQueue.ValueString()
-				wfAction.WorkflowExecutionTimeout = toDuration(workflow.WorkflowExecutionTimeout)
-				wfAction.WorkflowRunTimeout = toDuration(workflow.WorkflowRunTimeout)
-				wfAction.WorkflowTaskTimeout = toDuration(workflow.WorkflowTaskTimeout)
+			if plan.StartWorkflow == nil {
+				resp.Diagnostics.AddError("Temporal Error", "ScheduleResource Update: StartWorkflow was nil -- report this to devs")
+				return nil, temporalSdk.ErrSkipScheduleUpdate
+			}
+			scheduleUpdate.Schedule.Action = &temporalClient.ScheduleWorkflowAction{
+				ID:                       plan.StartWorkflow.WorkflowId.ValueString(),
+				Workflow:                 plan.StartWorkflow.Workflow.ValueString(),
+				TaskQueue:                plan.StartWorkflow.TaskQueue.ValueString(),
+				WorkflowExecutionTimeout: toDuration(plan.StartWorkflow.WorkflowExecutionTimeout),
+				WorkflowRunTimeout:       toDuration(plan.StartWorkflow.WorkflowRunTimeout),
+				WorkflowTaskTimeout:      toDuration(plan.StartWorkflow.WorkflowTaskTimeout),
+			}
+			if plan.ScheduleSpec != nil {
+				scheduleSpec := scheduleUpdate.Schedule.Spec
+				//scheduleSpec.CronExpressions = toStringArray(ctx, plan.ScheduleSpec.Crons)
+				// scheduleSpec.StartAt, diags = plan.ScheduleSpec.StartAt.ValueRFC3339Time()
+				// resp.Diagnostics.Append(diags...)
+				// scheduleSpec.EndAt, diags = plan.ScheduleSpec.EndAt.ValueRFC3339Time()
+				// resp.Diagnostics.Append(diags...)
+
+				scheduleSpec.Jitter = toDuration(plan.ScheduleSpec.Jitter)
+				scheduleSpec.TimeZoneName = plan.ScheduleSpec.TimeZoneName.ValueString()
 			}
 
-			policy := input.Description.Schedule.Policy
-			policy.Overlap = temporalEnums.SCHEDULE_OVERLAP_POLICY_SKIP // TODO: convert from enum
-			policy.CatchupWindow = toDuration(data.CatchupWindow)
-			policy.PauseOnFailure = data.PauseOnFailure.ValueBool()
+			// TODO
+			// // Schedule - Describes when Actions should be taken.
+			// Spec *ScheduleSpec
+			// // State - this schedules state
+			// State *ScheduleState
 
-			input.Description.Schedule.Spec = &temporalClient.ScheduleSpec{
-				// Calendars:       []internal.ScheduleCalendarSpec{},
-				// Intervals:       []internal.ScheduleIntervalSpec{},
-				// CronExpressions: []string{},
-				// Skip:            []internal.ScheduleCalendarSpec{},
-				// StartAt:         time.Time{},
-				// EndAt:           time.Time{},
-				// Jitter:          0,
-				// TimeZoneName:    "",
-			}
-			state := input.Description.Schedule.State
-			state.Note = data.Note.ValueString()
-			state.Paused = data.Paused.ValueBool()
-			state.RemainingActions = int(data.RemainingActions.ValueInt64())
-			//LimitedActions:   false,
-
-			return &temporalClient.ScheduleUpdate{
-				Schedule: &input.Description.Schedule,
-			}, nil
+			return scheduleUpdate, nil
 		},
 	})
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Update: Unable to Update Schedule %s : %s", data.ScheduleId.ValueString(), err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("ScheduleResource Update: Unable to Update Schedule %s : %s", scheduleID, err))
 		return
 	}
 
+	// Fetch the new Schedule's description from the Server
+	desc, err := r.tclient.ScheduleClient().GetHandle(ctx, plan.ScheduleId.ValueString()).Describe(ctx)
+	if err != nil {
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("ScheduleResource Update: Unable to describe created Schedule %s : %s", scheduleID, err))
+		return
+	}
+
+	// Construct final STATE, including Temporal-created values
+	state := tfschema.ScheduleResourceModel{}
+	assignScheduleResourceModelFromDescription(scheduleID, desc.Schedule, &state)
+
 	// Save updated data into Terraform state
-	tflog.Info(ctx, fmt.Sprintf("Update ScheduledWorkflow resource %s", data.ScheduleId.ValueString()))
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	tflog.Info(ctx, fmt.Sprintf("Update ScheduledWorkflow resource %s", state.ScheduleId.ValueString()))
+	diags = resp.State.Set(ctx, &state)
+	resp.Diagnostics.Append(diags...)
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
 func (r *ScheduleResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	// Read Terraform prior state data into the model
-	var data *ScheduleResourceModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	var state tfschema.ScheduleResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	// Fetch the Schedule from the Server
-	err := r.tclient.ScheduleClient().GetHandle(ctx, data.ScheduleId.ValueString()).Delete(ctx)
+	scheduleID := state.ScheduleId.ValueString()
+	err := r.tclient.ScheduleClient().GetHandle(ctx, scheduleID).Delete(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("Delete: Unable to delete Schedule : %s", err))
+		resp.Diagnostics.AddError("Temporal Error", fmt.Sprintf("ScheduleResource Delete: Unable to delete Schedule : %s", err))
 	}
-	tflog.Debug(ctx, fmt.Sprintf("Deleted ScheduledWorkflow resource %s", data.ScheduleId.ValueString()))
+	tflog.Debug(ctx, fmt.Sprintf("Deleted ScheduledWorkflow resource %s", scheduleID))
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -377,6 +268,7 @@ func (r *ScheduleResource) ImportState(ctx context.Context, req resource.ImportS
 }
 
 //////////////////////////////////////////////////////////////////////////////
+// TODO: move us to a package
 
 func toDuration(val types.String) time.Duration {
 	duration, _ := time.ParseDuration(val.ValueString())
@@ -385,7 +277,8 @@ func toDuration(val types.String) time.Duration {
 
 func fromDuration(duration time.Duration) types.String {
 	if duration == 0 {
-		return types.StringNull()
+		//return types.StringNull()
+		return types.StringValue("0s")
 	}
 	return types.StringValue(duration.String())
 }
@@ -413,4 +306,124 @@ func getWorkflowName(workflow interface{}) types.String {
 	default:
 		return types.StringUnknown()
 	}
+}
+
+func assignScheduleResourceModelFromDescription(createdScheduleID string, sched temporalClient.Schedule, model *tfschema.ScheduleResourceModel) {
+	// Construct final STATE, including Temporal-created values
+	model.ScheduleId = types.StringValue(createdScheduleID)
+	if policy := sched.Policy; policy != nil {
+		model.Overlap = types.StringValue(policy.Overlap.String())
+		model.CatchupWindow = fromDuration(policy.CatchupWindow)
+		model.PauseOnFailure = types.BoolValue(policy.PauseOnFailure)
+	}
+	if scheduleState := sched.State; scheduleState != nil {
+		model.Note = fromString(scheduleState.Note)
+		model.Paused = types.BoolValue(scheduleState.Paused)
+		model.RemainingActions = types.Int64Value(int64(scheduleState.RemainingActions))
+		// TriggerImmediately isn't stored in Temporal state, so we clear it out here
+		model.TriggerImmediately = types.BoolValue(false)
+	}
+	// TODO: memo, search attributes, scheduleBackfill
+
+	if sched.Spec != nil {
+		model.ScheduleSpec = &tfschema.ScheduleSpecModel{
+			Jitter:       fromDuration(sched.Spec.Jitter),
+			TimeZoneName: types.StringValue(sched.Spec.TimeZoneName),
+			//Calendars:    fromTemporalCalendars(sched.Spec.Calendars),
+			// StartAt: timetypes.NewRFC3339TimeValue(sched.Spec.StartAt),
+			// EndAt:   timetypes.NewRFC3339TimeValue(sched.Spec.EndAt),
+		}
+	}
+
+	switch newAction := sched.Action.(type) {
+	case *temporalClient.ScheduleWorkflowAction:
+		model.StartWorkflow = &tfschema.ScheduleWorkflowActionResourceModel{
+			WorkflowId:               types.StringValue(newAction.ID),
+			Workflow:                 getWorkflowName(newAction.Workflow),
+			TaskQueue:                types.StringValue(newAction.TaskQueue),
+			WorkflowExecutionTimeout: fromDuration(newAction.WorkflowExecutionTimeout),
+			WorkflowRunTimeout:       fromDuration(newAction.WorkflowRunTimeout),
+			WorkflowTaskTimeout:      fromDuration(newAction.WorkflowTaskTimeout),
+		}
+	}
+}
+
+func toStringArray(ctx context.Context, list types.List) []string {
+	if list.IsNull() || list.IsUnknown() {
+		return nil
+	}
+	var strArr []string
+	list.ElementsAs(ctx, &strArr, true)
+	return strArr
+}
+
+func fromStringArray(strArr []string) types.List {
+	elems := make([]attr.Value, len(strArr))
+	for i, str := range strArr {
+		elems[i] = types.StringValue(str)
+	}
+	list, _ := types.ListValue(types.StringType, elems)
+	return list
+}
+
+func toTemporalCalendars(calendarModels []tfschema.ScheduleCalendarSpecModel) []temporalClient.ScheduleCalendarSpec {
+	var tempCalendars []temporalClient.ScheduleCalendarSpec
+	for _, calModel := range calendarModels {
+		tempCalendar := temporalClient.ScheduleCalendarSpec{
+			Second:     toTemporalScheduleRanges(calModel.Second),
+			Minute:     toTemporalScheduleRanges(calModel.Minute),
+			Hour:       toTemporalScheduleRanges(calModel.Hour),
+			DayOfMonth: toTemporalScheduleRanges(calModel.DayOfMonth),
+			Month:      toTemporalScheduleRanges(calModel.Month),
+			Year:       toTemporalScheduleRanges(calModel.Year),
+			DayOfWeek:  toTemporalScheduleRanges(calModel.DayOfWeek),
+			Comment:    calModel.Comment.ValueString(),
+		}
+		tempCalendars = append(tempCalendars, tempCalendar)
+	}
+	return tempCalendars
+}
+
+func fromTemporalCalendars(tempModels []temporalClient.ScheduleCalendarSpec) []tfschema.ScheduleCalendarSpecModel {
+	var calModels []tfschema.ScheduleCalendarSpecModel
+	for _, tempModel := range tempModels {
+		calModel := tfschema.ScheduleCalendarSpecModel{
+			Second:     fromTemporalScheduleRanges(tempModel.Second),
+			Minute:     fromTemporalScheduleRanges(tempModel.Minute),
+			Hour:       fromTemporalScheduleRanges(tempModel.Hour),
+			DayOfMonth: fromTemporalScheduleRanges(tempModel.DayOfMonth),
+			Month:      fromTemporalScheduleRanges(tempModel.Month),
+			Year:       fromTemporalScheduleRanges(tempModel.Year),
+			DayOfWeek:  fromTemporalScheduleRanges(tempModel.DayOfWeek),
+			Comment:    types.StringValue(tempModel.Comment),
+		}
+		calModels = append(calModels, calModel)
+	}
+	return calModels
+}
+
+func toTemporalScheduleRanges(ranges []tfschema.ScheduleRangeModel) []temporalClient.ScheduleRange {
+	var tempRanges []temporalClient.ScheduleRange
+	for _, rangeModel := range ranges {
+		tempRange := temporalClient.ScheduleRange{
+			Start: int(rangeModel.Start.ValueInt64()),
+			End:   int(rangeModel.End.ValueInt64()),
+			Step:  int(rangeModel.Step.ValueInt64()),
+		}
+		tempRanges = append(tempRanges, tempRange)
+	}
+	return tempRanges
+}
+
+func fromTemporalScheduleRanges(tempRanges []temporalClient.ScheduleRange) []tfschema.ScheduleRangeModel {
+	var rangeModels []tfschema.ScheduleRangeModel
+	for _, tempRange := range tempRanges {
+		rangeModel := tfschema.ScheduleRangeModel{
+			Start: types.Int64Value(int64(tempRange.Start)),
+			End:   types.Int64Value(int64(tempRange.End)),
+			Step:  types.Int64Value(int64(tempRange.Step)),
+		}
+		rangeModels = append(rangeModels, rangeModel)
+	}
+	return rangeModels
 }
