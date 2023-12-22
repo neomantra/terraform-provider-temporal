@@ -3,12 +3,12 @@
 page_title: "temporal_schedule Resource - terraform-provider-temporal"
 subcategory: ""
 description: |-
-  Scheduled Workflow resource
+  Schedule resource
 ---
 
 # temporal_schedule (Resource)
 
-Scheduled Workflow resource
+Schedule resource
 
 
 
@@ -17,10 +17,62 @@ Scheduled Workflow resource
 
 ### Required
 
-- `id` (String) Schedule ID
+- `id` (String) The business identifier of the schedule.
 
-### Read-Only
+### Optional
 
-- `desc` (String) Schedule description in JSON
+- `catchup_window` (String) The Temporal Server might be down or unavailable at the time when a Schedule should take an Action.
+When the Server comes back up, CatchupWindow controls which missed Actions should be taken at that point. The default is one
+minute, which means that the Schedule attempts to take any Actions that wouldn't be more than one minute late. It
+takes those Actions according to the Overlap. An outage that lasts longer than the Catchup
+Window could lead to missed Actions.
+Optional: defaulted to 1 minute
+- `note` (String) Informative human-readable message with contextual notes, e.g. the reason
+a Schedule is paused. The system may overwrite this message on certain
+conditions, e.g. when pause-on-failure happens.
+- `overlap` (String) Controls what happens when an Action would be started by a Schedule at the same time that an older Action is still
+running. This can be changed after a Schedule has taken some Actions, and some changes might produce
+unintuitive results. In general, the later policy overrides the earlier policy.
+Optional: defaulted to SCHEDULE_OVERLAP_POLICY_SKIP
+- `pause_on_failure` (Boolean) When an Action times out or reaches the end of its Retry Policy the Schedule will pause.
+With SCHEDULE_OVERLAP_POLICY_ALLOW_ALL, this pause might not apply to the next Action, because the next Action
+might have already started previous to the failed one finishing. Pausing applies only to Actions that are scheduled
+to start after the failed one finishes.
+Optional: defaulted to false
+- `paused` (Boolean) Start in paused state. Optional: defaulted to false
+- `remaining_actions` (Number) limit the number of Actions to take.
+This number is decremented after each Action is taken, and Actions are not
+taken when the number is '0' (unless ScheduleHandle.Trigger is called).
+Optional: defaulted to zero
+- `schedule` (Attributes) Describes when Actions should be taken. (see [below for nested schema](#nestedatt--schedule))
+- `start_workflow` (Attributes) Which Action to take. Currently only start_workflow is supported. (see [below for nested schema](#nestedatt--start_workflow))
+- `trigger_immediately` (Boolean) Trigger one Action immediately on creating the schedule.
+Optional: defaulted to false
+
+<a id="nestedatt--schedule"></a>
+### Nested Schema for `schedule`
+
+Optional:
+
+- `jitter` (String) Jitter - All times will be incremented by a random value from 0 to this amount of jitter, capped
+by the time until the next schedule. Optional: Defaulted to 0
+- `time_zone` (String) TimeZone - IANA time zone name, for example "US/Eastern". The time zone to use for interpreting the schedule. Optional: Defaulted to UTC
+
+
+<a id="nestedatt--start_workflow"></a>
+### Nested Schema for `start_workflow`
+
+Optional:
+
+- `execution_timeout` (String) The timeout for duration of workflow execution.
+- `run_timeout` (String)
+- `task_queue` (String) The workflow tasks of the workflow are scheduled on the queue with this name.
+This is also the name of the activity task queue on which activities are scheduled.
+- `task_timeout` (String) The timeout for processing workflow task from the time the worker pulled this task.
+- `workflow` (String) Type name of the Workflow to run.
+- `workflow_id` (String) The business identifier of the workflow execution.
+The workflow ID of the started workflow may not match this exactly,
+it may have a timestamp appended for uniqueness.
+Optional: defaulted to a uuid.
 
 
